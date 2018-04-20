@@ -5,11 +5,16 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_curve, roc_auc_score
 from scipy.ndimage.filters import uniform_filter1d
+import tensorflow as tf
 
 from keras.models import Sequential, Model
 from keras.layers import Conv1D, MaxPool1D, Dense, Dropout, Flatten,BatchNormalization, Input, concatenate, Activation
 from keras.optimizers import Adam
-
+from keras.callbacks import ModelCheckpoint, TensorBoard
+from keras import backend as K
+from sklearn.metrics import confusion_matrix
+from callbacks.confusion_matrix import *
+from dal.hdf5dataset import Hdf5Dataset
 
 # LOAD THE DATA
 INPUT_LIB = 'data/'
@@ -91,9 +96,26 @@ def batch_generator(x_train, y_train, batch_size=32):
 
         yield x_batch, y_batch
 
+
+train_cf_mat = Hdf5Dataset('models/train_cf_matrix.h5', (2, 2))
+val_cf_mat = Hdf5Dataset('models/val_cf_matrix.h5', shape=(2, 2))
+
+
+cf = ConfusionMatrix(2, train_cf_mat.insert, val_cf_mat.insert)
+
+callbacks = [ModelCheckpoint(monitor='val_loss',
+                             filepath='weights/best_weights.hdf5',
+                             save_best_only=True,
+                             save_weights_only=True),
+             TensorBoard(log_dir='logs'),
+             cf]
+
+metrics = cf.generate_metrics()
+
 #Start with a slightly lower learning rate, to ensure convergence
-model.compile(optimizer=Adam(1e-5), loss = 'binary_crossentropy', metrics=['accuracy'])
+model.compile(optimizer=Adam(1e-5), loss = 'binary_crossentropy', metrics=['accuracy'] + metrics)
 hist = model.fit_generator(batch_generator(x_train, y_train, 32),
                            validation_data=(x_test, y_test),
                            verbose=0, epochs=5,
+                           callbacks=callbacks,
                            steps_per_epoch=x_train.shape[1]//32)
